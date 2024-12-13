@@ -3,6 +3,7 @@ const { toArray, groupBy, last } = _;
 const dateFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 const sameDay = (d1, d2) => d1.toDateString() === d2.toDateString()
 
+let isGitlab = (window.location.hostname === '183.99.50.117');
 let days
 let weeks
 let calendarGraph
@@ -81,9 +82,15 @@ const initUI = () => {
   contributionsWrapper.append(canvas)
 
   // Inject toggle
-  let insertLocation = contributionsBox.querySelector('h2')
-  if (insertLocation.previousElementSibling && insertLocation.previousElementSibling.nodeName === 'DETAILS') {
-    insertLocation = insertLocation.previousElementSibling
+  let insertLocation;
+  if (isGitlab) {
+    insertLocation = contributionsBox.querySelector('.calendar')
+  }
+  else {
+    insertLocation = contributionsBox.querySelector('h2')
+    if (insertLocation.previousElementSibling && insertLocation.previousElementSibling.nodeName === 'DETAILS') {
+      insertLocation = insertLocation.previousElementSibling
+    }
   }
 
   const buttonGroup = document.createElement('div')
@@ -156,6 +163,22 @@ const getCountFromNode = (node) => {
   return dataCount === 'No' ? 0 : Number.parseInt(dataCount, 10)
 }
 
+const getCountFromGitlabNode = (node) => {
+  // Contribution label formats:
+  // No contributions on January 9th
+  // 1 contribution on January 10th.
+  // 2 contributions on August 31st.
+  const titleContent = node.getAttribute('title');
+  const contributionMatches = titleContent.match(/(\d*|No) contributions?(.*)./);
+
+  if (!contributionMatches) {
+    return 0
+  }
+
+  const dataCount = contributionMatches[1]
+  return dataCount === 'No' ? 0 : Number.parseInt(dataCount, 10)
+}
+
 const getSquareColor = (rect) => {
   return rgbToHex(getComputedStyle(rect).getPropertyValue('fill'))
 }
@@ -168,21 +191,55 @@ const loadStats = () => {
   let currentStreakStart = null
   let currentStreakEnd = null
 
-  const dayNodes = [...document.querySelectorAll('.js-calendar-graph-table tbody td.ContributionCalendar-day')].map(
-    (d) => {
+  const getDateFromNode = (node) => {
+    const titleContent = node.getAttribute('title');
+    // title 속성에서 정규식을 사용하여 날짜 텍스트 추출
+    const dateMatch = titleContent.match(/">(.*?)</);
+    if (dateMatch) {
+      return dateMatch[1]; // "Wednesday Dec 13, 2023" 형식의 텍스트 반환
+    }
+    return null;
+  };
+
+  const getTransformValues = (node) => {
+    const transform = node.getAttribute('transform');
+    const matches = transform.match(/translate\((\d+),\s*(\d+)\)/);
+    if (matches) {
       return {
-        date: new Date(d.dataset.date),
-        week: d.dataset.ix,
+        x: parseInt(matches[1]), // 18
+        y: parseInt(matches[2])  // 18
+      };
+    }
+    return null;
+  };
+
+  const getWeek = (x) => {
+    return (x - 1) / 17;
+  }
+
+  let dayNodeGithubClass = '.js-calendar-graph-table tbody td.ContributionCalendar-day';
+  let dayNodeGitlabClass = '.user-contrib-cell';
+  const dayNodes = [...document.querySelectorAll(isGitlab ? dayNodeGitlabClass : dayNodeGithubClass)].map(
+    (d) => {
+      let date = isGitlab ? getDateFromNode(d) : d.dataset.date;
+      let week = isGitlab ? getWeek(getTransformValues(d.parentElement).x) : d.dataset.ix;
+      let tid = isGitlab ? new Date(date).getTime() : d.getAttribute('aria-labelledby');
+      return {
+        date: new Date(date),
+        week: week,
         color: getSquareColor(d),
-        tid: d.getAttribute('aria-labelledby')
+        tid: tid
       }
     }
   )
-
-  const tooltipNodes = [...document.querySelectorAll('.js-calendar-graph tool-tip')].map((t) => {
+  let tooltipNodeGithubClass = '.js-calendar-graph tool-tip';
+  let tooltipNodeGitlabClass = '.user-contrib-cell';
+  const tooltipNodes = [...document.querySelectorAll(isGitlab ? tooltipNodeGitlabClass : tooltipNodeGithubClass)].map((t) => {
+    let tid = isGitlab ? new Date(getDateFromNode(t)).getTime() : t.id;
+    let count = isGitlab ? getCountFromGitlabNode(t) : getCountFromNode(t);
     return {
-      tid: t.id,
-      count: getCountFromNode(t)
+      tid: tid,
+      count: count
     }
   })
 
@@ -364,8 +421,9 @@ const renderStats = () => {
     document.querySelector('.ic-contributions-wrapper').parentNode.previousElementSibling.textContent
   const viewingYear = graphHeaderText.match(/in \d{4}/g) !== null
 
+  let cssPrefix = isGitlab ? 'gl-' : '';
   let topMarkup = `
-    <div class="position-absolute top-0 right-0 mt-3 mr-5">
+    <div class="position-absolute ${cssPrefix}top-0 ${cssPrefix}right-0 mt-3 mr-5">
       <h5 class="mb-1">Contributions</h5>
       <div class="d-flex flex-justify-between rounded-2 border px-1 px-md-2">
         <div class="p-2">
@@ -398,7 +456,7 @@ const renderStats = () => {
   `
 
   let bottomMarkup = `
-    <div class="position-absolute bottom-0 left-0 ml-5 mb-6">
+    <div class="position-absolute ${cssPrefix}bottom-0 ${cssPrefix}left-0 ml-5 mb-6">
       <h5 class="mb-1">Streaks</h5>
       <div class="d-flex flex-justify-between rounded-2 border px-1 px-md-2">
         <div class="p-2">
@@ -429,8 +487,14 @@ const renderStats = () => {
 }
 
 const generateIsometricChart = () => {
-  calendarGraph = document.querySelector('.js-calendar-graph')
-  contributionsBox = document.querySelector('.js-yearly-contributions')
+  if (isGitlab) {
+    calendarGraph = document.querySelector('.js-contrib-calendar')
+    contributionsBox = document.querySelector('.user-calendar')
+  }
+  else {
+    calendarGraph = document.querySelector('.js-calendar-graph')
+    contributionsBox = document.querySelector('.js-yearly-contributions')
+  }
 
   resetValues()
   initUI()
@@ -457,6 +521,7 @@ const datesDayDifference = (date1, date2) => {
 
 ;(async function () {
   // Are we on a profile page?
+  // github
   if (document.querySelector('.vcard-names-container')) {
     await getSettings()
 
@@ -476,6 +541,32 @@ const datesDayDifference = (date1, date2) => {
     window.matchMedia('(prefers-color-scheme: dark)').addListener(() => {
       renderIsometricChart()
     })
+
+    const observedContainer = document.querySelector('html')
+    const observer = new MutationObserver(callback)
+    observer.observe(observedContainer, config)
+  }
+
+  // gitlab
+  if (document.querySelector('.user-info')) {
+    await getSettings()
+
+    const config = { attributes: true, childList: true, subtree: true }
+    const callback = (mutationsList) => {
+      for (const mutation of mutationsList) {
+        if (
+          mutation.type === 'childList' &&
+          document.querySelector('.js-contrib-calendar') &&
+          !document.querySelector('.ic-contributions-wrapper')
+        ) {
+          generateIsometricChart()
+        }
+      }
+    }
+
+    // window.matchMedia('(prefers-color-scheme: dark)').addListener(() => {
+    //   renderIsometricChart()
+    // })
 
     const observedContainer = document.querySelector('html')
     const observer = new MutationObserver(callback)
