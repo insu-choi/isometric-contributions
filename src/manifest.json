@@ -6,7 +6,7 @@
   "content_scripts": [
     {
       "css": ["iso.css"],
-      "js": ["obelisk.min.js", "iso.js"],
+      "js": ["lodash.js", "obelisk.min.js", "iso.js"],
       "matches": ["https://github.com/*"]
     }
   ],

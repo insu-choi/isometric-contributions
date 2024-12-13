@@ -1,4 +1,4 @@
-import { toArray, groupBy, last } from 'lodash-es'
+const { toArray, groupBy, last } = _;
 
 const dateFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 const sameDay = (d1, d2) => d1.toDateString() === d2.toDateString()
